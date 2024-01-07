@@ -1,4 +1,5 @@
 use std::fs::{self, File};
+use std::io::Write;
 use std::mem::size_of;
 use std::os::windows::fs::FileExt;
 
@@ -153,6 +154,35 @@ impl PPHD8FileData
 
 }
 
+impl VAGFile
+{
+    pub fn write_to_file(&self, filepath : &String) -> Result<(), std::io::Error>
+    {
+        let mut new_file = fs::File::create(filepath)?;
+        let file_format_buff = ['V' as u8, 'A' as u8, 'G' as u8, 'p' as u8];
+        let mut channels_buff = get_buff_for_num(self.channels);
+        channels_buff.reverse();
+        
+        let zero_buff = [0u8; 4];
+        let mut len_buff = get_buff_for_num(self.size);
+        len_buff.reverse();
+        let mut freq_buff = get_buff_for_num(self.frequency);
+        freq_buff.reverse();
+
+        // Actually write the file
+        new_file.write(&file_format_buff)?;
+        new_file.write(&channels_buff)?;
+        new_file.write(&zero_buff)?;
+        new_file.write(&len_buff)?;
+        new_file.write(&freq_buff)?;
+        new_file.write(&[0u8; 12])?;
+        new_file.write(&self.filename)?;
+        new_file.write(self.body.as_slice())?;
+
+        Ok(())
+    }
+}
+
 impl ParseError
 {
     pub fn to_string(&self) -> String
@@ -176,3 +206,12 @@ impl From<std::io::Error> for ParseError
     }
 }
 
+fn get_buff_for_num(num : u32) -> [u8; 4]
+{
+    unsafe 
+    {
+        let mut buff = [0u8; std::mem::size_of::<u32>()];
+        buff.as_mut_ptr().cast::<u32>().write(num);
+        buff
+    }
+}

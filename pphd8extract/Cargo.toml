@@ -1,5 +1,5 @@
 [package]
-name = "pphd8edit"
+name = "pphd8extract"
 version = "0.1.0"
 edition = "2021"
 
