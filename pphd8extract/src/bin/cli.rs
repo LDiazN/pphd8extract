@@ -1,50 +1,11 @@
 use std::path::Path;
 use std::process::exit;
-use std::{fs, os::windows::fs::FileExt, io::Write};
-extern crate pphd8extract;
-use pphd8extract::pphd8parser::PPHD8FileData;
 use std::env;
 
-macro_rules! read_from_file {
-    ($file_variable:ident, $type_name:ident, $offset:expr) => {
-        unsafe{
-            let mut buffer = [0u8; std::mem::size_of::<$type_name>()];
-            let result = $file_variable.seek_read(&mut buffer, $offset).expect("Couldn't read for some reason");
-            assert_eq!(result, std::mem::size_of::<$type_name>());
+use rayon::prelude::*;
 
-            *(buffer.as_mut_ptr().cast::<u32>())
-        }
-    };
-}
-
-fn read_line_of_file(file : &fs::File, position : u64) -> [u8; 16]
-{
-    let mut buff = [0u8; 16];
-    file.seek_read(&mut buff, position).expect("Should be able to read file");
-    return buff;
-}
-
-fn line_is_all_zeros(line : &[u8] )-> bool
-{
-    for &b in line
-    {
-        if b != 0
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn get_buff_for_num(num : u32) -> [u8; 4]
-{
-    unsafe 
-    {
-        let mut buff = [0u8; std::mem::size_of::<u32>()];
-        buff.as_mut_ptr().cast::<u32>().write(num);
-        buff
-    }
-}
+extern crate pphd8extract;
+use pphd8extract::pphd8parser::PPHD8FileData;
 
 fn main()
 {
@@ -85,22 +46,32 @@ fn main()
     println!("Extracting VAG files...");
 
     let output_dir_path = Path::new(output_dir);
-    for (i, vag) in vags.iter().enumerate() {
-        let output_vag_filepath = output_dir_path
-                                            .join(
-                                                format!("extracted_{i}.vag")
-                                            );
-        let output_vag_filepath = output_vag_filepath.as_path();
 
-        println!("Extracting file {i} to {}...", output_vag_filepath.display());
-        let result = vag.write_to_file(&output_vag_filepath.to_str().unwrap().to_string());
+    let errors : Vec<(usize,std::io::Error)> = vags.par_iter()
+        .enumerate()
+        .map(|(i, vag)|{
+            let output_vag_filepath = output_dir_path.join(format!("extracted_{i}.vag"));
+            let output_vag_filepath = output_vag_filepath.as_path();
+            println!("Extracting file {i} to {}...", output_vag_filepath.display());
+            (i, vag.write_to_file(&output_vag_filepath.to_str().unwrap().to_string()))
+    })  .filter_map(
+        |(i, output)| 
+                    match output { Err(e) => Some((i, e)), _ => None }
+            )
+        .collect();
 
-        match result 
+    if !errors.is_empty()
+    {
+        eprintln!("Some files could not be extracted:");
+        for (i, error) in errors
         {
-            Err(e) => {eprintln!("Could not write vag file! Error: {e}"); exit(1)},
-            _ => {}
+            eprintln!("VAG File {i} could not be extracted. Error: {error}");
         }
     }
+    else 
+    {
+        println!("All files successfully extracted!");
+    }
 
-    println!("All files successfully extracted!");
+    return
 }
