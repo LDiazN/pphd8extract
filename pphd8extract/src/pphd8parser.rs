@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::fs::{self, File};
+use std::path::Path;
 use std::io::Write;
 use std::mem::size_of;
 use std::os::windows::fs::FileExt;
@@ -59,7 +60,7 @@ macro_rules! read_from_file {
 
 impl PPHD8FileData {
     /// Parse a VAG file from a file.
-    pub fn parse_from_file(filename: &String) -> Result<PPHD8FileData, ParseError> {
+    pub fn parse_from_file(filename: &Path) -> Result<PPHD8FileData, ParseError> {
         // Try to open file:
         let file = fs::File::open(filename)?;
         let start_of_index = read_from_file!(file, u32, 0x38) + 16 * 4;
