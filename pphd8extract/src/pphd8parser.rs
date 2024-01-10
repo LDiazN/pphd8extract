@@ -1,9 +1,9 @@
 use std::fmt::Display;
 use std::fs::{self, File};
-use std::path::Path;
 use std::io::Write;
 use std::mem::size_of;
 use std::os::windows::fs::FileExt;
+use std::path::Path;
 
 /// All the data that we know how to extract from a PPHD8 file.
 ///
