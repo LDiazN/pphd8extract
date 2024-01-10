@@ -89,7 +89,7 @@ impl CLI {
                 println!("Saving file {i} to {}...", output_vag_filepath.display());
                 (
                     i,
-                    vag.write_to_file(&output_vag_filepath.to_str().unwrap().to_string()),
+                    vag.write_to_file(&output_vag_filepath),
                 )
             })
             .filter_map(|(i, output)| match output {

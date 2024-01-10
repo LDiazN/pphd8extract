@@ -141,7 +141,7 @@ impl PPHD8FileData {
 
 impl VAGFile {
     /// Writes this VAG file to the specified file
-    pub fn write_to_file(&self, filepath: &String) -> Result<(), std::io::Error> {
+    pub fn write_to_file(&self, filepath: &Path) -> Result<(), std::io::Error> {
         let mut new_file = fs::File::create(filepath)?;
         let file_format_buff = [b'V', b'A', b'G', b'p'];
         let mut channels_buff = get_buff_for_num(self.channels);
