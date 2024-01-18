@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::mem::size_of;
 use std::os::windows::fs::FileExt;
+use std::path::Path;
 
 /// All the data that we know how to extract from a PPHD8 file.
 ///
@@ -59,7 +60,7 @@ macro_rules! read_from_file {
 
 impl PPHD8FileData {
     /// Parse a VAG file from a file.
-    pub fn parse_from_file(filename: &String) -> Result<PPHD8FileData, ParseError> {
+    pub fn parse_from_file(filename: &Path) -> Result<PPHD8FileData, ParseError> {
         // Try to open file:
         let file = fs::File::open(filename)?;
         let start_of_index = read_from_file!(file, u32, 0x38) + 16 * 4;
@@ -140,7 +141,7 @@ impl PPHD8FileData {
 
 impl VAGFile {
     /// Writes this VAG file to the specified file
-    pub fn write_to_file(&self, filepath: &String) -> Result<(), std::io::Error> {
+    pub fn write_to_file(&self, filepath: &Path) -> Result<(), std::io::Error> {
         let mut new_file = fs::File::create(filepath)?;
         let file_format_buff = [b'V', b'A', b'G', b'p'];
         let mut channels_buff = get_buff_for_num(self.channels);
