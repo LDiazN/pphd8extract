@@ -10,7 +10,7 @@ fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 480.0])
+            .with_inner_size([480.0, 640.0])
             .with_resizable(true),
         ..Default::default()
     };

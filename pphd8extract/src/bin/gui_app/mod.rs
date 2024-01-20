@@ -3,10 +3,10 @@
 
 
 // Third party imports
-use eframe::{self, egui::{self, InputState, RichText, accesskit::Vec2}, epaint::{Color32, Stroke}};
+use eframe::{self, egui::{self, InputState, RichText, Layout}, epaint::{Color32, Stroke, vec2}, emath::Align};
 
 // Rust imports
-use std::{fmt::Display, fs::File, default, ops::Mul};
+use std::{fmt::Display, path::PathBuf};
 
 // Local imports
 use ::pphd8extract::pphd8parser;
@@ -14,12 +14,13 @@ use ::pphd8extract::pphd8parser;
 #[derive(Debug)]
 pub struct App
 {
-    pphd8_files : Vec<egui::DroppedFile>,
+    pphd8_files : Vec<(egui::DroppedFile, Result<(), FileErrors>)>,
     are_files_hovering : bool,
-    state : AppState
+    state : AppState,
+    output_dir : Option<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum AppState
 {
     /// First state, waiting for the user to drop the files
@@ -34,11 +35,10 @@ impl eframe::App for App
 {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ctx.input(|i| self.process_input(i));
 
             ui.heading("PPHD8 Extract");
 
-            
+            ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 8.0);
 
             match self.state
             {
@@ -54,29 +54,87 @@ impl eframe::App for App
 
 impl App 
 {
-    fn process_input(&mut self, input_state : &InputState)
+    fn update_waiting_files(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
+    {
+        _ctx.input_mut(|input_state| self.process_input_waiting_files(input_state));
+
+        // File dropping area
+        self.draw_file_dropping_area(ui);
+        
+        // Scrollable area with all selected files
+        self.draw_scrollable_file_list_area(ui);
+        
+        // Selection of output dir
+        self.draw_output_dir_field(ui);
+
+        ui.add_space(16.0);
+
+        // Extraction button
+        self.draw_start_button(ui);
+    }
+
+    fn update_processing_files(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
+    {
+
+    }
+
+    fn update_finished(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
+    {
+
+    }
+
+    fn process_input_waiting_files(&mut self, input_state : &mut InputState)
     {
 
         self.are_files_hovering = !input_state.raw.hovered_files.is_empty();
+        
+        if !self.are_files_hovering && !input_state.raw.dropped_files.is_empty(){
+            self.pphd8_files = input_state
+                .raw.dropped_files
+                .iter()
+                .map(
+                    |file| 
+                    (file.clone(), Self::check_file(file))
+                ).collect();
+            input_state.raw.dropped_files.clear();
 
-        if self.are_files_hovering {
-            self.pphd8_files = input_state.raw.dropped_files.clone();
         }
     }
 
-    fn update_waiting_files(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
+    fn check_file(file: &egui::DroppedFile) -> Result<(), FileErrors>
     {
-        // File dropping area
+        // I don't know in which cases this will return None (?)
+        let path_buf = file.path.as_ref().unwrap(); 
+        let file_path = path_buf.as_path();
+
+        // Check that this file is a valid pphd
+        if let Some(extension) = file_path.extension() {
+            if extension != "pphd8"
+            {
+                return Err(FileErrors::NotAValidPPHD8);
+            }
+        }
+        else {
+            return Err(FileErrors::NotAValidPPHD8)
+        }
+
+        Ok(())
+    }
+
+    fn draw_file_dropping_area(&self, ui : &mut egui::Ui)
+    {
+        let stroke_color = if self.are_files_hovering {Color32::BLUE} else {Color32::GRAY};
+        let text_color = if self.are_files_hovering {Color32::LIGHT_BLUE} else {Color32::BLACK};
         egui::Frame::central_panel(&egui::Style::default())
             .fill(egui::Color32::DARK_GRAY)
             .rounding(5.0)
-            .stroke(Stroke::new(2.0, Color32::GRAY))
+            .stroke(Stroke::new(2.0, stroke_color))
             .outer_margin(5.0)
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| 
                 {
                     let text = RichText::new("Drop PPHD8 files here")
-                        .color(Color32::BLACK)
+                        .color(text_color)
                         .strong()
                         .size(20.0);
 
@@ -87,8 +145,10 @@ impl App
                 space.y = space.y * 0.1;
                 ui.allocate_space(space)
             });
-        
-        // Scrollable area with all selected files
+    }
+
+    fn draw_scrollable_file_list_area(&self, ui : &mut egui::Ui)
+    {
         ui.label(
             RichText::new("Selected files")
                 .size(18.0)
@@ -103,15 +163,77 @@ impl App
                     .max_width(ui.available_width())
                     .max_height(ui.available_height() * 0.5)
                     .show(ui, |ui| {
-                        if self.pphd8_files.is_empty() 
+                        if !self.are_files_selected()
                         {
                             Self::get_scrollable_area_label("No files selected", ui);
+                        }
+                        else {
+                            for (file, status) in self.pphd8_files.iter()
+                            {
+                                ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), 
+                                |ui|
+                                {
+                                    ui.columns(2, |columns| 
+                                    {
+                                        Self::get_scrollable_area_label(
+                                            format!("{}", 
+                                            file.path.as_ref().unwrap().display()), 
+                                            &mut columns[0]
+                                        );
+
+                                        columns[1].with_layout(Layout::right_to_left(Align::Center), |ui|
+                                        {
+                                            ui.add_space(12.0);
+
+                                            match status
+                                            {
+                                                Ok(()) => {ui.label(RichText::new("Ok").color(Color32::GREEN));},
+                                                Err(e) => {ui.label(RichText::new(format!("Error: {e}")).color(Color32::DARK_RED));},
+                                            }
+                                            
+                                        });
+                                    });
+                                });
+
+                                ui.separator();
+                            }
                         }
                         ui.allocate_space(ui.available_size());
                 });
             });
+        let n_files = self.pphd8_files.len();
+        let n_errors = self.pphd8_files.iter().filter(|(_, e)| e.is_err()).count();
+
+        if n_files > 0
+        {
+            ui.label(format!("{n_files} files selected."));
+        }
+
+        if n_errors > 0
+        {
+            ui.label(RichText::new(format!{"There are {n_errors} files with errors"}).color(Color32::RED));
+        }
+    }
+
+    fn draw_output_dir_field(&mut self, ui : &mut egui::Ui)
+    {
+        ui.label(RichText::new("Output Directory:").size(18.0));
         
-        // Extraction button
+        let text = match &self.output_dir {
+            Some(p) => format!("Output directory: {}", p.display()),
+            None => format!("Output directory...")
+        };
+
+        let btn = egui::Button::new(text).min_size(ui.available_size() * egui::vec2(0.0, 0.2));
+
+        if ui.add(btn).clicked() 
+        {
+            self.output_dir = rfd::FileDialog::new().pick_folder();
+        }
+    }
+
+    fn draw_start_button(&self, ui : &mut egui::Ui)
+    {
         ui.allocate_ui(ui.available_size() * egui::vec2(1.0, 0.25), |ui|
         {
             ui.horizontal_centered(|ui| {
@@ -125,39 +247,18 @@ impl App
             });
         });
 
-        if self.pphd8_files.is_empty() {
-            let msg = "Arrastra los archivos que quieras editar aqui";
-            if self.are_files_hovering {
-                ui.colored_label(Color32::BLUE, msg);
-            } else {
-                ui.label(msg);
-            }
-        } else {
-            ui.label("Archivos seleccionados: ");
-            for file in self.pphd8_files.iter() {
-                ui.label(
-                    file.path
-                        .as_ref()
-                        .map(|pathbuf| pathbuf.as_path().display().to_string())
-                        .unwrap_or("No pude recuperar el nombre de este archivo :(".to_owned()),
-                );
-            }
+        if !self.extraction_ready()
+        {
+            ui.label("Add files and specify output directory to start extraction process");
         }
-    }
+        else {
+            ui.label(RichText::new("Ready to go!").color(Color32::GREEN));
+        }
 
-    fn update_processing_files(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
-    {
-
-    }
-
-    fn update_finished(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame, ui : &mut egui::Ui)
-    {
-
-    }
-
-    fn check_file(file: egui::DroppedFile) -> Result<(), FileErrors>
-    {
-        Ok(())
+        if self.files_with_errors()
+        {
+            ui.label(RichText::new("Fix errors to start extraction").color(Color32::RED));
+        }
     }
 
     fn get_scrollable_area_label<T : Display>(text : T, ui : &mut egui::Ui) -> egui::Response
@@ -171,12 +272,30 @@ impl App
 
     fn extraction_ready(&self) -> bool 
     {
-        !self.pphd8_files.is_empty() && !self.are_files_hovering
+        !self.pphd8_files.is_empty() && !self.are_files_hovering && self.output_dir.is_some() && !self.files_with_errors()
+    }
+
+    fn files_with_errors(&self) -> bool 
+    {
+        self.pphd8_files.iter().any(|(_, e)| e.is_err())
+    }
+
+    fn get_output_dir(&self) -> PathBuf
+    {
+        debug_assert!(self.state == AppState::WaitingForFiles, "You shouldn't be calling this function while waiting for files since output dir might be not yet selected");
+        self.output_dir.as_ref().unwrap().clone()
+    }
+
+    #[inline(always)]
+    fn are_files_selected(&self) -> bool 
+    {
+        !self.are_files_hovering && !self.pphd8_files.is_empty()
     }
     
 }
 
 /// Invalid file errors
+#[derive(Debug)]
 enum FileErrors 
 {
     NotAValidPPHD8
@@ -188,7 +307,8 @@ impl Default for App
         return Self { 
             pphd8_files: vec![], 
             are_files_hovering: false,
-            state: AppState::WaitingForFiles
+            state: AppState::WaitingForFiles,
+            output_dir: None
         }
     }
 }
@@ -198,7 +318,7 @@ impl Display for FileErrors
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 
         match self {
-            FileErrors::NotAValidPPHD8 => write!(f, "")
+            FileErrors::NotAValidPPHD8 => write!(f, "Not a valid pphd8 file")
         }
         
     }
