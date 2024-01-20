@@ -87,10 +87,7 @@ impl CLI {
                 let output_vag_filepath = self.target_dir.join(format!("extracted_{i}.vag"));
                 let output_vag_filepath = output_vag_filepath.as_path();
                 println!("Saving file {i} to {}...", output_vag_filepath.display());
-                (
-                    i,
-                    vag.write_to_file(&output_vag_filepath),
-                )
+                (i, vag.write_to_file(&output_vag_filepath))
             })
             .filter_map(|(i, output)| match output {
                 Err(e) => Some((i, e)),
