@@ -4,13 +4,15 @@
 // Third party imports
 use eframe::{
     self,
-    egui::{self, InputState, Layout, RichText},
+    egui::{self, InputState, Layout, RichText, DroppedFile},
     emath::Align,
     epaint::{vec2, Color32, Stroke},
 };
+use pphd8extract::pphd8parser::ParseError;
+use scc::Queue;
 
 // Rust imports
-use std::{fmt::Display, path::PathBuf};
+use std::{fmt::Display, path::PathBuf, thread::{self, JoinHandle}, sync::Arc, default};
 
 // Local imports
 use ::pphd8extract::pphd8parser;
@@ -21,7 +23,37 @@ pub struct App {
     are_files_hovering: bool,
     state: AppState,
     output_dir: Option<PathBuf>,
+    processing_work : Option<WorkManager>
 }
+
+#[derive(Debug)]
+struct WorkManager
+{
+    processing_thread_handle : Option<JoinHandle<()>>,
+    work : Arc<Work>,
+    files : Vec<(PathBuf, FileState)>,
+    generated_files : Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+enum FileState
+{
+    Pending,
+    Success, 
+    Error(pphd8parser::ParseError)
+}
+
+#[derive(Debug)]
+struct Work
+{
+    pending_files : FileQueue,
+    success_files : FileQueue,
+    error_files : ErrorQueue,
+    generated_files : FileQueue,
+}
+
+type FileQueue = Queue<PathBuf>;
+type ErrorQueue = Queue<(PathBuf, pphd8parser::ParseError)>;
 
 #[derive(Debug, PartialEq)]
 enum AppState {
@@ -29,21 +61,17 @@ enum AppState {
     WaitingForFiles,
     /// Second state, actually processing valid files
     ProcessingFiles,
-    /// The process finished, displaying all possible errors and relevant information
-    Finished,
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("PPHD8 Extract");
 
             ui.style_mut().spacing.item_spacing = egui::vec2(0.0, 8.0);
 
             match self.state {
                 AppState::WaitingForFiles => self.update_waiting_files(ctx, _frame, ui),
                 AppState::ProcessingFiles => self.update_processing_files(ctx, _frame, ui),
-                AppState::Finished => self.update_finished(ctx, _frame, ui),
             }
         });
     }
@@ -79,14 +107,16 @@ impl App {
         _frame: &mut eframe::Frame,
         ui: &mut egui::Ui,
     ) {
-    }
+        {
+            let work = self.processing_work.as_mut().unwrap();
+            let text = if work.is_work_done() {"Processing finished!"} else {"Processing files..."};
+            ui.label(RichText::new(text).size(18.0));
+            work.check_work();
+        }
 
-    fn update_finished(
-        &mut self,
-        _ctx: &egui::Context,
-        _frame: &mut eframe::Frame,
-        ui: &mut egui::Ui,
-    ) {
+        // Print pending files
+        self.draw_processing_files(ui);
+        
     }
 
     fn process_input_waiting_files(&mut self, input_state: &mut InputState) {
@@ -235,14 +265,19 @@ impl App {
         }
     }
 
-    fn draw_start_button(&self, ui: &mut egui::Ui) {
+    fn draw_start_button(&mut self, ui: &mut egui::Ui) {
         ui.allocate_ui(ui.available_size() * egui::vec2(1.0, 0.25), |ui| {
             ui.horizontal_centered(|ui| {
-                ui.add_enabled(
+                let btn_clicked = ui.add_enabled(
                     self.extraction_ready(),
                     egui::Button::new(RichText::new("Extract").size(18.0))
                         .min_size(ui.available_size()),
-                );
+                ).clicked();
+
+                if btn_clicked
+                {
+                    self.start_processing();
+                }
             });
         });
 
@@ -285,6 +320,135 @@ impl App {
     fn are_files_selected(&self) -> bool {
         !self.are_files_hovering && !self.pphd8_files.is_empty()
     }
+    
+    fn start_processing(&mut self)
+    {
+        let files = self.pphd8_files
+            .iter()
+            .map(|(f, _)| { 
+                f.path.clone().unwrap()
+            })
+            .collect::<Vec<PathBuf>>();
+        self.processing_work = Some(WorkManager::new(&files));
+
+        self.processing_work.as_mut().map(|w| w.start_work());
+
+        self.state = AppState::ProcessingFiles;
+    }
+
+    fn draw_processing_files(&mut self, ui : &mut egui::Ui)
+    {
+        let work = self.processing_work.as_mut().unwrap();
+
+        ui.label(RichText::new("Pending files:").size(16.0));
+        egui::Frame::central_panel(&egui::Style::default())
+            .fill(Color32::DARK_GRAY)
+            .rounding(5.0)
+            .outer_margin(5.0)
+            .show(ui, |ui| {
+                ui.allocate_space(ui.available_size() * egui::vec2(1.0, 0.0));
+                egui::ScrollArea::vertical()
+                    .max_width(ui.available_width())
+                    .max_height(ui.available_height() * 0.5)
+                    .show(ui, |ui| {
+
+                        //
+                        for (file, state) in work.files.iter()
+                        {
+                            ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui|
+                            {
+                                Self::get_scrollable_area_label(file.display(), ui);
+                            });
+                            ui.separator();
+                        }
+                        
+                        ui.allocate_space(ui.available_size() * egui::vec2(1.0, 0.3));
+                    });
+            });
+    }
+}
+
+impl WorkManager
+{
+    fn new(files : &Vec<PathBuf>) -> Self
+    {
+        let pending_files = Queue::default();
+        for file in files 
+        {
+            pending_files.push(file.clone());
+        }
+
+        WorkManager {
+            processing_thread_handle: None,
+            work : Arc::new(Work {
+                pending_files,
+                success_files : Queue::default(),
+                error_files : Queue::default(),
+                generated_files : Queue::default(),
+            }),
+            files : vec![],
+            generated_files : vec![]
+        }
+    }
+
+    fn start_work(&mut self)
+    {
+        let work  = self.work.clone();
+        self.processing_thread_handle = Some(thread::spawn(move || { work.do_work(); }));
+    }
+
+    fn check_work(&mut self) 
+    {
+        // fill errors 
+        while let Some(v) = self.work.error_files.pop()
+        {
+            let (v, err) = &(**v);
+            for i in 0..self.files.len()
+            {
+                let (p, _) = &self.files[i];
+                if p != v 
+                { continue; }
+                self.files[i].1 = FileState::Error(err.clone());
+            }
+        }
+
+        // Fill successful files
+        while let Some(v) = self.work.success_files.pop()
+        {
+            let v = &(**v);
+            for i in 0..self.files.len()
+            {
+                let (p, _) = &self.files[i];
+                if p != v 
+                { continue; }
+                self.files[i].1 = FileState::Success;
+            }
+        }
+
+        // Fill generated files
+        while let Some(v) = self.generated_files.pop()
+        {
+            self.generated_files.push(v);
+        }
+
+    }
+
+    fn is_work_done(&self) -> bool
+    {
+        self.files.iter().all(|(_, state)| match state {
+            FileState::Pending => false,
+            _ => true
+        })
+    }
+
+}
+
+impl Work 
+{
+    fn do_work(&self)
+    {
+
+    }
 }
 
 /// Invalid file errors
@@ -300,6 +464,7 @@ impl Default for App {
             are_files_hovering: false,
             state: AppState::WaitingForFiles,
             output_dir: None,
+            processing_work: None
         };
     }
 }
