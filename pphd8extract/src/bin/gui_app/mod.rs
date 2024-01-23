@@ -359,26 +359,26 @@ impl App {
                     .max_height(ui.available_height() * 0.5)
                     .show(ui, |ui| {
                         for (file, state) in work.files.iter() {
-                            ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui|{
-                                ui.columns(2, |ui|{
+                            ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui| {
+                                ui.columns(2, |ui| {
                                     Self::get_scrollable_area_label(file.display(), &mut ui[0]);
-                                    
-                                    ui[1].with_layout(egui::Layout::right_to_left(Align::Center), 
-                                    |ui|
-                                    {
-                                        match state 
-                                        {
+
+                                    ui[1].with_layout(
+                                        egui::Layout::right_to_left(Align::Center),
+                                        |ui| match state {
                                             FileState::Pending => ui.label(
-                                                RichText::new("Pending")
-                                                    .color(Color32::YELLOW)
-                                                ),
-                                            FileState::Success => ui.label(RichText::new("Success!").color(Color32::GREEN)),
-                                            FileState::Error(e) => ui.label(RichText::new(format!("Error: {e}")).color(Color32::DARK_RED))
-                                        }
-                                    }
-                                );
+                                                RichText::new("Pending").color(Color32::YELLOW),
+                                            ),
+                                            FileState::Success => ui.label(
+                                                RichText::new("Success!").color(Color32::GREEN),
+                                            ),
+                                            FileState::Error(e) => ui.label(
+                                                RichText::new(format!("Error: {e}"))
+                                                    .color(Color32::DARK_RED),
+                                            ),
+                                        },
+                                    );
                                 });
-                                
                             });
                             ui.separator();
                         }
@@ -388,8 +388,7 @@ impl App {
             });
     }
 
-    fn draw_generated_files(&mut self, ui: &mut egui::Ui)
-    {
+    fn draw_generated_files(&mut self, ui: &mut egui::Ui) {
         let work = self.processing_work.as_mut().unwrap();
 
         ui.label(RichText::new("Generated Files").size(18.0));
@@ -397,21 +396,18 @@ impl App {
             .fill(Color32::DARK_GRAY)
             .rounding(5.0)
             .outer_margin(5.0)
-            .show(ui, |ui|
-            {
-                ui.push_id(ui.next_auto_id(), |ui|
-                {
+            .show(ui, |ui| {
+                ui.push_id(ui.next_auto_id(), |ui| {
                     ui.allocate_space(ui.available_size() * egui::vec2(1.0, 0.0));
                     egui::ScrollArea::vertical()
                         .max_width(ui.available_width())
                         .max_height(ui.available_height() * 0.5)
                         .show(ui, |ui| {
-                            for file in work.generated_files.iter()
-                            {
-                                ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui|{
+                            for file in work.generated_files.iter() {
+                                ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui| {
                                     ui.label(format!("{}", file.display()));
                                 });
-    
+
                                 ui.separator();
                             }
                         });
@@ -436,7 +432,10 @@ impl WorkManager {
                 error_files: Queue::default(),
                 generated_files: Queue::default(),
             }),
-            files: files.iter().map(|f| {(f.clone(), FileState::Pending)}).collect(),
+            files: files
+                .iter()
+                .map(|f| (f.clone(), FileState::Pending))
+                .collect(),
             generated_files: vec![],
         }
     }
