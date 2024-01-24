@@ -8,10 +8,14 @@ use eframe::{
     emath::Align,
     epaint::{vec2, Color32, Stroke},
 };
-use pphd8extract::pphd8parser::ParseError;
+use pphd8extract::pphd8parser::{PPHD8FileData, ParseError};
 use scc::Queue;
 
 // Rust imports
+use rayon::{
+    self,
+    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
+};
 use std::{
     fmt::Display,
     path::PathBuf,
@@ -124,6 +128,9 @@ impl App {
 
         // Print files generated so far
         self.draw_generated_files(ui);
+
+        // Print exit buttons
+        self.draw_exit_buttons(ui);
     }
 
     fn process_input_waiting_files(&mut self, input_state: &mut InputState) {
@@ -267,7 +274,11 @@ impl App {
 
         let btn = egui::Button::new(text).min_size(ui.available_size() * egui::vec2(0.0, 0.2));
 
-        if ui.add(btn).clicked() {
+        if ui
+            .add(btn)
+            .on_hover_text("Select directory where resulting files will be saved")
+            .clicked()
+        {
             self.output_dir = rfd::FileDialog::new().pick_folder();
         }
     }
@@ -336,10 +347,12 @@ impl App {
             .map(|(f, _)| f.path.clone().unwrap())
             .collect::<Vec<PathBuf>>();
 
-        println!("Starting to process: {} files", files.len());
         self.processing_work = Some(WorkManager::new(&files));
 
-        self.processing_work.as_mut().map(|w| w.start_work());
+        let output_dir = self.get_output_dir();
+        self.processing_work
+            .as_mut()
+            .map(|w| w.start_work(output_dir));
 
         self.state = AppState::ProcessingFiles;
     }
@@ -401,19 +414,48 @@ impl App {
                     ui.allocate_space(ui.available_size() * egui::vec2(1.0, 0.0));
                     egui::ScrollArea::vertical()
                         .max_width(ui.available_width())
-                        .max_height(ui.available_height() * 0.5)
+                        .max_height(ui.available_height() * 0.7)
                         .show(ui, |ui| {
                             for file in work.generated_files.iter() {
                                 ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui| {
-                                    ui.label(format!("{}", file.display()));
+                                    Self::get_scrollable_area_label(
+                                        format!("{}", file.display()),
+                                        ui,
+                                    );
                                 });
 
                                 ui.separator();
                             }
                         });
                 });
-                ui.allocate_space(ui.available_size() * egui::vec2(1.0, 0.3));
             });
+    }
+
+    fn draw_exit_buttons(&mut self, ui: &mut egui::Ui) {
+        let work = self.processing_work.as_ref().unwrap();
+        let reset_enabled = work.processing_thread_handle.is_some()
+            && work
+                .processing_thread_handle
+                .as_ref()
+                .unwrap()
+                .is_finished();
+
+        ui.add_enabled_ui(reset_enabled, |ui| {
+            if ui
+                .button(RichText::new("Finish").size(18.0))
+                .on_hover_text("Go back to the file selection screen")
+                .clicked()
+            {
+                self.reset();
+            }
+        });
+    }
+
+    fn reset(&mut self) {
+        self.state = AppState::WaitingForFiles;
+        self.processing_work = None;
+        self.output_dir = None;
+        self.pphd8_files = vec![];
     }
 }
 
@@ -440,10 +482,10 @@ impl WorkManager {
         }
     }
 
-    fn start_work(&mut self) {
+    fn start_work(&mut self, output_dir: PathBuf) {
         let work = self.work.clone();
         self.processing_thread_handle = Some(thread::spawn(move || {
-            work.do_work();
+            work.do_work(output_dir);
         }));
     }
 
@@ -473,8 +515,8 @@ impl WorkManager {
         }
 
         // Fill generated files
-        while let Some(v) = self.generated_files.pop() {
-            self.generated_files.push(v);
+        while let Some(v) = self.work.generated_files.pop() {
+            self.generated_files.push((**v).clone());
         }
     }
 
@@ -487,7 +529,63 @@ impl WorkManager {
 }
 
 impl Work {
-    fn do_work(&self) {}
+    fn do_work(&self, output_dir: PathBuf) {
+        let mut files_to_process = vec![];
+        let output_dir = output_dir.as_path();
+
+        while let Some(file) = self.pending_files.pop() {
+            files_to_process.push(file);
+        }
+
+        files_to_process
+            .par_iter()
+            .map(|file| {
+                // parse pphd file
+                let pphd_filepath = file.as_path();
+                let pphd8_file = match PPHD8FileData::parse_from_file(pphd_filepath) {
+                    Err(e) => {
+                        self.error_files.push(((***file).clone(), e));
+                        return;
+                    }
+                    Ok(file) => file,
+                };
+
+                // extract vag files
+                let vags = match pphd8_file.get_vag_files() {
+                    Err(e) => {
+                        self.error_files.push(((***file).clone(), e));
+                        return;
+                    }
+                    Ok(vags) => vags,
+                };
+
+                // save vag files
+                vags.par_iter()
+                    .enumerate()
+                    .map(|(i, file)| {
+                        let mut filename = pphd_filepath
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string();
+                        filename.push_str(format!("extracted_{i}.vag").as_str());
+                        let filepath = output_dir.join(filename);
+                        // TODO handle this error as well
+                        let result = file.write_to_file(filepath.as_path());
+                        match result {
+                            Ok(_) => {
+                                self.generated_files.push(filepath);
+                            }
+                            Err(e) => (), // TODO handle this error
+                        };
+                    })
+                    .collect::<Vec<()>>();
+
+                self.success_files.push((***file).clone());
+            })
+            .collect::<Vec<()>>();
+    }
 }
 
 /// Invalid file errors
