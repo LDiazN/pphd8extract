@@ -366,9 +366,8 @@ impl App {
         self.processing_work = Some(WorkManager::new(&files));
 
         let output_dir = self.get_output_dir();
-        
-        if let Some(w) = self.processing_work.as_mut()
-        {
+
+        if let Some(w) = self.processing_work.as_mut() {
             w.start_work(output_dir);
         }
 
@@ -547,7 +546,9 @@ impl WorkManager {
     }
 
     fn is_work_done(&self) -> bool {
-        self.files.iter().all(|(_, state)| !matches!(state, FileState::Pending))
+        self.files
+            .iter()
+            .all(|(_, state)| !matches!(state, FileState::Pending))
     }
 }
 
