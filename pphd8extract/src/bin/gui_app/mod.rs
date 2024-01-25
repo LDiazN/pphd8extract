@@ -8,7 +8,7 @@ use eframe::{
     emath::Align,
     epaint::{vec2, Color32, Stroke},
 };
-use pphd8extract::pphd8parser::{PPHD8FileData, ParseError};
+use pphd8extract::pphd8parser::PPHD8FileData;
 use scc::Queue;
 
 // Rust imports
@@ -40,7 +40,7 @@ struct WorkManager {
     processing_thread_handle: Option<JoinHandle<()>>,
     work: Arc<Work>,
     files: Vec<(PathBuf, FileState)>,
-    generated_files: Vec<PathBuf>,
+    generated_files: Vec<(PathBuf, bool)>,
 }
 
 #[derive(Debug)]
@@ -55,9 +55,10 @@ struct Work {
     pending_files: FileQueue,
     success_files: FileQueue,
     error_files: ErrorQueue,
-    generated_files: FileQueue,
+    generated_files: FileStatusQueue,
 }
 
+type FileStatusQueue = Queue<(PathBuf, bool)>; // (file path, is ok)
 type FileQueue = Queue<PathBuf>;
 type ErrorQueue = Queue<(PathBuf, pphd8parser::ParseError)>;
 
@@ -78,6 +79,13 @@ impl eframe::App for App {
                 AppState::WaitingForFiles => self.update_waiting_files(ctx, _frame, ui),
                 AppState::ProcessingFiles => self.update_processing_files(ctx, _frame, ui),
             }
+
+            ui.allocate_ui(ui.available_size(), |ui| {
+                ui.with_layout(egui::Layout::bottom_up(Align::Center), |ui| {
+                    ui.hyperlink_to("Luis Díaz", "https://github.com/LDiazN");
+                    ui.label("Written by ");
+                });
+            });
         });
     }
 }
@@ -191,7 +199,7 @@ impl App {
                 });
 
                 let mut space = ui.available_size();
-                space.y = space.y * 0.1;
+                space.y *= 0.1;
                 ui.allocate_space(space)
             });
     }
@@ -269,7 +277,7 @@ impl App {
 
         let text = match &self.output_dir {
             Some(p) => format!("Output directory: {}", p.display()),
-            None => format!("Output directory..."),
+            None => "Output directory...".to_string(),
         };
 
         let btn = egui::Button::new(text).min_size(ui.available_size() * egui::vec2(0.0, 0.2));
@@ -319,6 +327,14 @@ impl App {
         )
     }
 
+    fn get_scrollable_area_label_colored<T: Display>(
+        text: T,
+        ui: &mut egui::Ui,
+        color: Color32,
+    ) -> egui::Response {
+        ui.label(RichText::new(format!("{text}")).size(14.0).color(color))
+    }
+
     fn extraction_ready(&self) -> bool {
         !self.pphd8_files.is_empty()
             && !self.are_files_hovering
@@ -350,9 +366,11 @@ impl App {
         self.processing_work = Some(WorkManager::new(&files));
 
         let output_dir = self.get_output_dir();
-        self.processing_work
-            .as_mut()
-            .map(|w| w.start_work(output_dir));
+        
+        if let Some(w) = self.processing_work.as_mut()
+        {
+            w.start_work(output_dir);
+        }
 
         self.state = AppState::ProcessingFiles;
     }
@@ -416,12 +434,20 @@ impl App {
                         .max_width(ui.available_width())
                         .max_height(ui.available_height() * 0.7)
                         .show(ui, |ui| {
-                            for file in work.generated_files.iter() {
+                            for (file, was_ok) in work.generated_files.iter() {
                                 ui.allocate_ui(ui.available_size() * vec2(1.0, 0.1), |ui| {
-                                    Self::get_scrollable_area_label(
-                                        format!("{}", file.display()),
-                                        ui,
-                                    );
+                                    if *was_ok {
+                                        Self::get_scrollable_area_label(
+                                            format!("{}", file.display()),
+                                            ui,
+                                        );
+                                    } else {
+                                        Self::get_scrollable_area_label_colored(
+                                            format!("{}: Could not write file", file.display()),
+                                            ui,
+                                            Color32::DARK_RED,
+                                        );
+                                    }
                                 });
 
                                 ui.separator();
@@ -521,10 +547,7 @@ impl WorkManager {
     }
 
     fn is_work_done(&self) -> bool {
-        self.files.iter().all(|(_, state)| match state {
-            FileState::Pending => false,
-            _ => true,
-        })
+        self.files.iter().all(|(_, state)| !matches!(state, FileState::Pending))
     }
 }
 
@@ -573,12 +596,7 @@ impl Work {
                         let filepath = output_dir.join(filename);
                         // TODO handle this error as well
                         let result = file.write_to_file(filepath.as_path());
-                        match result {
-                            Ok(_) => {
-                                self.generated_files.push(filepath);
-                            }
-                            Err(e) => (), // TODO handle this error
-                        };
+                        self.generated_files.push((filepath, result.is_ok()));
                     })
                     .collect::<Vec<()>>();
 
@@ -596,13 +614,13 @@ enum FileErrors {
 
 impl Default for App {
     fn default() -> Self {
-        return Self {
+        Self {
             pphd8_files: vec![],
             are_files_hovering: false,
             state: AppState::WaitingForFiles,
             output_dir: None,
             processing_work: None,
-        };
+        }
     }
 }
 
