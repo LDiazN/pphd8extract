@@ -4,6 +4,7 @@ use std::io::Write;
 use std::mem::size_of;
 use std::os::windows::fs::FileExt;
 use std::path::Path;
+use std::sync::Arc;
 
 /// All the data that we know how to extract from a PPHD8 file.
 ///
@@ -37,8 +38,9 @@ pub struct VAGFile {
 }
 
 /// Possible errors that could happen when parsing a VAG file
+#[derive(Debug, Clone)]
 pub enum ParseError {
-    IOError(std::io::Error),
+    IOError(Arc<std::io::Error>),
     IncompleteVag {
         entry_index: usize,
         expected_size: u32,
@@ -206,7 +208,7 @@ impl Display for PPHD8FileData {
 
 impl From<std::io::Error> for ParseError {
     fn from(value: std::io::Error) -> Self {
-        ParseError::IOError(value)
+        ParseError::IOError(Arc::new(value))
     }
 }
 

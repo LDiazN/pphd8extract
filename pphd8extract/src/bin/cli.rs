@@ -13,7 +13,7 @@ use pphd8extract::pphd8parser::{PPHD8FileData, VAGFile};
 /// Extract the content of a pphd8 file, getting the list of VAG files
 #[derive(Parser, Debug)]
 #[command(author = "Luis Diaz", version, about, long_about = None)]
-struct CLI {
+struct Cli {
     /// file to decompress
     pphd8_file: PathBuf,
 
@@ -25,7 +25,7 @@ struct CLI {
     verbose: bool,
 }
 
-impl CLI {
+impl Cli {
     /// Checks if the arguments are consistent.
     /// If not, handle errors and exit the process
     fn check(&self) {
@@ -74,7 +74,7 @@ impl CLI {
         };
         println!("VAG Files successfully parsed!");
 
-        return vags;
+        vags
     }
 
     fn save_vag_files(&self, vags: &Vec<VAGFile>) {
@@ -87,10 +87,7 @@ impl CLI {
                 let output_vag_filepath = self.target_dir.join(format!("extracted_{i}.vag"));
                 let output_vag_filepath = output_vag_filepath.as_path();
                 println!("Saving file {i} to {}...", output_vag_filepath.display());
-                (
-                    i,
-                    vag.write_to_file(&output_vag_filepath),
-                )
+                (i, vag.write_to_file(output_vag_filepath))
             })
             .filter_map(|(i, output)| match output {
                 Err(e) => Some((i, e)),
@@ -130,7 +127,7 @@ impl CLI {
 }
 
 fn main() {
-    let cli = CLI::parse();
+    let cli = Cli::parse();
     cli.check();
     cli.run();
 }
