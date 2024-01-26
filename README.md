@@ -4,7 +4,7 @@ A simple program written in rust to extract VAG files from PPHD8 files, a tar-li
  <img src="https://github.com/LDiazN/pphd8extract/raw/main/img/pphd8extract.jpg" alt="Watch the gameplay video in YouTube" border="10" />
 </p>
 
-This is a simple program I made as a request from an acquaintance. The problem seemed interesting so I downloaded [ImHex](https://github.com/WerWolv/ImHex) and started reverse engineering the PPHD8 files. This was my first time reverse engineering a file format and it was a lot of fun, at the start it was super intimidating but after starting to see some patterns here and there I was able to at the least a playable version of the VAG files. 
+This is a simple program I made as a request from an acquaintance. The problem seemed interesting so I downloaded [ImHex](https://github.com/WerWolv/ImHex) and started reverse engineering the PPHD8 files. This was my first time reverse engineering a file format and it was a lot of fun, at the start it was super intimidating but after starting to see some patterns here and there I was able to extract a playable version of the VAG files. 
 
 The code is written in **Rust** since it's a language that i'm interested in learning and it seems very fit for this kind of task. I used [Rayon](https://crates.io/crates/rayon) for parallel execution when processing and saving multiple files, and [egui](https://github.com/emilk/egui) for UI (but I also provide a CLI version if you prefer). 
 
@@ -23,7 +23,7 @@ I provide the executable files for windows, but you can also build it from scrat
    2. `cargo build --release --bin cli` for the command line executable
 4. In any case, the output executable will be in `target/release`, you can rename them as you want
 
-Note that I have only tested this program on Windows, it might not work in Mac or Linux,
+Note that I have only tested this program on Windows, it might not work in Mac or Linux.
 
 # Usage
 ## UI
