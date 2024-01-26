@@ -19,8 +19,8 @@ I provide the executable files for windows, but you can also build it from scrat
 1. Clone this repository
 2. Move to the `pphd8extract` directory
 3. Compile the executable file you want:
-   1. `cargo build --release --bin gui` for the executable with a GUI
-   2. `cargo build --release --bin cli` for the command line executable
+   1. **GUI Executable**: `cargo build --release --bin gui`
+   2. **Command line executable**: `cargo build --release --bin cli`
 4. In any case, the output executable will be in `target/release`, you can rename them as you want
 
 Note that I have only tested this program on Windows, it might not work in Mac or Linux.
