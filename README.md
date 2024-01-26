@@ -14,7 +14,7 @@ To actually play a `.VAG` file, you can use [MFAudio](https://www.zophar.net/uti
 
 # Installation
 
-I provide the executable files for windows, but you can also build it from scratch having [Rust installed](https://www.rust-lang.org/tools/install).
+I provide the executable files for windows in releases, but you can also build it from scratch having [Rust installed](https://www.rust-lang.org/tools/install).
 
 1. Clone this repository
 2. Move to the `pphd8extract` directory
